@@ -1,3 +1,4 @@
 bridges:
   slack: "@slackbot:hacklab.fi"
 bridge_timeout: 10.0
+tokens:

@@ -14,6 +14,7 @@ class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
         helper.copy("bridges.slack")
         helper.copy("bridge_timeout")
+        helper.copy("tokens")
 
 class BotException(Exception):
     pass
@@ -101,6 +102,16 @@ class Vaksi(Plugin):
             self.try_fire(bridge)
         return sink
 
+    def auth(self, req: Request) -> None:
+        key = req.headers.get("authorization")
+        valids = self.config["tokens"]
+        if key is None:
+            raise BotException("Authorization header missing")
+        if not valids:
+            raise BotException("No authentication tokens configured")
+        if key not in valids:
+            raise BotException("Unauthorized")
+
     @command.passive("^Failed.*: (.*)$", msgtypes=[MessageType.NOTICE])
     async def collect_error(self, evt: MessageEvent, match: tuple[str]) -> None:
         req = self.match_request("slack", evt)
@@ -114,13 +125,18 @@ class Vaksi(Plugin):
             req.set_result(match[1])
 
     @web.get("/directs")
-    async def post_data(self, req: Request) -> Response:
-        dms = await self.client.get_account_data('m.direct')
-        return json_response(dms)
+    async def web_directs(self, req: Request) -> Response:
+        try:
+            self.auth(req)
+            dms = await self.client.get_account_data('m.direct')
+            return json_response(dms)
+        except BotException as e:
+            return json_response({"error": str(e), "source": "bot"})
 
     @web.get("/direct/slack/{id}")
-    async def post_data(self, req: Request) -> Response:
+    async def web_slack_pm(self, req: Request) -> Response:
         try:
+            self.auth(req)
             room_id = await self.open_slack_pm(req.match_info["id"])
             return json_response({"room": room_id})
         except MatrixStandardRequestError as e:
