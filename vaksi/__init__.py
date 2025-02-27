@@ -134,11 +134,27 @@ class Vaksi(Plugin):
             return json_response({"error": str(e), "source": "bot"})
 
     @web.get("/direct/slack/{id}")
-    async def web_slack_pm(self, req: Request) -> Response:
+    async def web_slack_find_pm(self, req: Request) -> Response:
         try:
             self.auth(req)
             room_id = await self.open_slack_pm(req.match_info["id"])
             return json_response({"room": room_id})
+        except MatrixStandardRequestError as e:
+            return json_response({"error": e.message, "source": "matrix"})
+        except BotException as e:
+            return json_response({"error": str(e), "source": "bot"})
+        except SlackException as e:
+            return json_response({"error": str(e), "source": "slack"})
+
+    @web.post("/direct/slack/{id}")
+    async def web_slack_pm(self, req: Request) -> Response:
+        try:
+            self.auth(req)
+            room_id = await self.open_slack_pm(req.match_info["id"])
+            data = await req.text()
+            content = TextMessageEventContent(MessageType.TEXT, data)
+            event_id = await self.client.send_message(room_id, content)
+            return json_response({"room": room_id, "event": event_id})
         except MatrixStandardRequestError as e:
             return json_response({"error": e.message, "source": "matrix"})
         except BotException as e:
