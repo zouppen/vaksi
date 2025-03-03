@@ -18,6 +18,7 @@ class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
         helper.copy("bridges.slack")
         helper.copy("bridge_timeout")
+        helper.copy("link_previews")
         helper.copy("hello.plain")
         helper.copy("hello.html")
         helper.copy("tokens")
@@ -154,6 +155,8 @@ class Vaksi(Plugin):
             content = TextMessageEventContent(MessageType.TEXT, format=Format.HTML)
             content.body = self.config["hello.plain"]
             content.formatted_body = self.config["hello.html"]
+            if not self.config["link_previews"]:
+                content["com.beeper.linkpreviews"] = []
             event_id = await self.client.send_message(evt.room_id, content)
             self.log.debug("Bot note sent to %s, event_id %s", evt.room_id, event_id)
 
@@ -210,6 +213,10 @@ class Vaksi(Plugin):
                 content = TextMessageEventContent(MessageType.TEXT, format=Format.HTML)
                 content.formatted_body = html
                 content.body = plain
+
+            # Link previews
+            if not self.config["link_previews"]:
+                content["com.beeper.linkpreviews"] = []
 
             # Finding the room and posting the message
             room_id = await self.open_slack_pm(req.match_info["id"])
