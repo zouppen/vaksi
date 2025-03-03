@@ -77,7 +77,10 @@ class Vaksi(Plugin):
         act = self.client.send_message(appserv, content)
 
         try:
-            return await asyncio.wait_for(self.sequential("slack", act), self.config["bridge_timeout"])
+            # Await response first and then return both 1st and 2nd event
+            async with asyncio.timeout(self.config["bridge_timeout"]):
+                resp = await self.sequential("slack", act)
+                return (act.result(), resp)
         except TimeoutError:
             self.log.debug("Bot response timeout while querying %s. Flushing queues", slack_id)
             self.panic_flush("slack")
@@ -139,7 +142,7 @@ class Vaksi(Plugin):
     async def web_slack_find_pm(self, req: Request) -> Response:
         try:
             self.auth(req)
-            room_id = await self.open_slack_pm(req.match_info["id"])
+            _, room_id = await self.open_slack_pm(req.match_info["id"])
             return json_response({"room": room_id})
         except MatrixStandardRequestError as e:
             return json_response({"error": e.message, "source": "matrix"})
