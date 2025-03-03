@@ -31,6 +31,7 @@ class Vaksi(Plugin):
         self.log.debug("Webbiappis on %s", self.webapp_url)
         self.queues = {"slack": deque()}
         self.sinks = {"slack": None}
+        self.gc_preventer = {"slack": None}
 
     async def stop(self) -> None:
         pass
@@ -48,7 +49,7 @@ class Vaksi(Plugin):
 
         act, sink = self.queues[queue].popleft()
         self.sinks[queue] = sink
-        asyncio.create_task(act)
+        self.gc_preventer[queue] = asyncio.create_task(act)
 
     def sequential(self, queue: str, act) -> None:
         response = asyncio.Future()
