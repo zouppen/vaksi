@@ -1,4 +1,7 @@
 bridges:
   slack: "@slackbot:hacklab.fi"
 bridge_timeout: 10.0
+hello:
+  plain: "Viestisi käsitellään ihmisen toimesta. Vastausviivettä saattaa olla muutamia päiviä.\nYour responses will be handled by a human. Please note that there may be a few days delay in responses."
+  html: "Viestisi käsitellään ihmisen toimesta. Vastausviivettä saattaa olla <strong>muutamia päiviä</strong>.<br><br>Your responses will be handled by a human. Please note that there may be a <strong>few days</strong> delay in responses."
 tokens:

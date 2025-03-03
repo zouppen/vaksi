@@ -2,7 +2,7 @@ from typing import Type
 
 import asyncio
 from collections import deque
-from mautrix.errors.request import MatrixStandardRequestError
+from mautrix.errors.request import MNotFound, MatrixStandardRequestError
 from mautrix.types import Format, MessageType, TextMessageEventContent
 from mautrix.util import markdown
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
@@ -12,10 +12,14 @@ from maubot import Plugin, MessageEvent
 from aiohttp.web import Request, Response, json_response
 import json
 
+BOT_HELLO_STATE = 'fi.hacklab.vaksi.hello'
+
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
         helper.copy("bridges.slack")
         helper.copy("bridge_timeout")
+        helper.copy("hello.plain")
+        helper.copy("hello.html")
         helper.copy("tokens")
 
 class BotException(Exception):
@@ -93,6 +97,20 @@ class Vaksi(Plugin):
             _, sink = self.queues[bridge].popleft()
             sink.set_exception(BotException("Panic flush due to previous timeout"))
 
+    async def clear_hello(self, room_id: str) -> bool:
+        try:
+            ans = await self.client.get_account_data(BOT_HELLO_STATE, room_id)
+            hello = bool(ans)
+        except MNotFound:
+            hello = False
+        if hello:
+            # Remove the flag
+            await self.client.set_account_data(BOT_HELLO_STATE, None, room_id)
+        return hello
+
+    async def set_hello(self, room_id: str) -> None:
+        await self.client.set_account_data(BOT_HELLO_STATE, {"hello": True}, room_id)
+
     def match_request(self, bridge: str, evt: MessageEvent):
         correct = self.config["bridges"][bridge]
         if evt.sender != correct:
@@ -128,6 +146,16 @@ class Vaksi(Plugin):
         req = self.match_request("slack", evt)
         if req is not None:
             req.set_result(match[1])
+
+    @command.passive("")
+    async def process_incoming(self, evt: MessageEvent, match) -> None:
+        need_hello = await self.clear_hello(evt.room_id)
+        if need_hello:
+            content = TextMessageEventContent(MessageType.TEXT, format=Format.HTML)
+            content.body = self.config["hello.plain"]
+            content.formatted_body = self.config["hello.html"]
+            event_id = await self.client.send_message(evt.room_id, content)
+            self.log.debug("Bot note sent to %s, event_id %s", evt.room_id, event_id)
 
     @web.get("/directs")
     async def web_directs(self, req: Request) -> Response:
@@ -185,6 +213,7 @@ class Vaksi(Plugin):
 
             # Finding the room and posting the message
             room_id = await self.open_slack_pm(req.match_info["id"])
+            await self.set_hello(room_id) # Bot replies next time
             event_id = await self.client.send_message(room_id, content)
             return json_response({"room": room_id, "event": event_id})
         except MatrixStandardRequestError as e:
