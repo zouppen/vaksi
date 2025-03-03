@@ -2,7 +2,6 @@ from typing import Type
 
 import asyncio
 from collections import deque
-from functools import partial
 from mautrix.errors.request import MatrixStandardRequestError
 from mautrix.types import Format, MessageType, TextMessageEventContent
 from mautrix.util import markdown
@@ -49,7 +48,7 @@ class Vaksi(Plugin):
 
         act, sink = self.queues[queue].popleft()
         self.sinks[queue] = sink
-        asyncio.create_task(act())
+        asyncio.create_task(act)
 
     def sequential(self, queue: str, act) -> None:
         response = asyncio.Future()
@@ -74,9 +73,9 @@ class Vaksi(Plugin):
         # Make the appservice to do all the heavy lifting
         content = TextMessageEventContent(MessageType.TEXT)
         content.body = f"!slack start-chat {slack_id}"
-        act = partial(self.client.send_message, appserv, content)
+        # The chat with the bot is sequential, so NO await here!
+        act = self.client.send_message(appserv, content)
 
-        # The chat with the bot is sequential
         try:
             return await asyncio.wait_for(self.sequential("slack", act), self.config["bridge_timeout"])
         except TimeoutError:
