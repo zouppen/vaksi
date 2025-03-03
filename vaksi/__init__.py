@@ -112,6 +112,35 @@ class Vaksi(Plugin):
     async def set_hello(self, room_id: str) -> None:
         await self.client.set_account_data(BOT_HELLO_STATE, {"hello": True}, room_id)
 
+    async def craft_message(self, data):
+        plain = data.get('plain')
+        md = data.get('md')
+        html = data.get('html')
+
+        if md is not None:
+            if html is not None:
+                raise BotException("Do not provide both md and html")
+            html = markdown.render(md)
+        elif html is None and plain is None:
+            raise BotException("Invalid combination of inputs")
+
+        if plain is None:
+            plain = (await MaubotHTMLParser().parse(html)).text
+
+        if html is None:
+            content = TextMessageEventContent(MessageType.TEXT)
+            content.body = plain
+        else:
+            content = TextMessageEventContent(MessageType.TEXT, format=Format.HTML)
+            content.formatted_body = html
+            content.body = plain
+
+        # Link previews
+        if not self.config["link_previews"]:
+            content["com.beeper.linkpreviews"] = []
+
+        return content
+
     def match_request(self, bridge: str, evt: MessageEvent):
         correct = self.config["bridges"][bridge]
         if evt.sender != correct:
@@ -152,13 +181,9 @@ class Vaksi(Plugin):
     async def process_incoming(self, evt: MessageEvent, match) -> None:
         need_hello = await self.clear_hello(evt.room_id)
         if need_hello:
-            content = TextMessageEventContent(MessageType.TEXT, format=Format.HTML)
-            content.body = self.config["hello.plain"]
-            content.formatted_body = self.config["hello.html"]
-            if not self.config["link_previews"]:
-                content["com.beeper.linkpreviews"] = []
+            content = await self.craft_message(self.config["hello"])
             event_id = await self.client.send_message(evt.room_id, content)
-            self.log.debug("Bot note sent to %s, event_id %s", evt.room_id, event_id)
+            self.log.debug("Hello message sent to %s, event_id %s", evt.room_id, event_id)
 
     @web.get("/directs")
     async def web_directs(self, req: Request) -> Response:
@@ -192,31 +217,7 @@ class Vaksi(Plugin):
                 data = await req.json()
             except json.JSONDecodeError as e:
                 raise BotException("Invalid JSON given")
-            plain = data.get('plain')
-            md = data.get('md')
-            html = data.get('html')
-
-            if md is not None:
-                if html is not None:
-                    raise BotException("Do not provide both md and html")
-                html = markdown.render(md)
-            elif html is None and plain is None:
-                raise BotException("Invalid combination of inputs")
-
-            if plain is None:
-                plain = (await MaubotHTMLParser().parse(html)).text
-
-            if html is None:
-                content = TextMessageEventContent(MessageType.TEXT)
-                content.body = plain
-            else:
-                content = TextMessageEventContent(MessageType.TEXT, format=Format.HTML)
-                content.formatted_body = html
-                content.body = plain
-
-            # Link previews
-            if not self.config["link_previews"]:
-                content["com.beeper.linkpreviews"] = []
+            content = await self.craft_message(data)
 
             # Finding the room and posting the message
             room_id = await self.open_slack_pm(req.match_info["id"])
