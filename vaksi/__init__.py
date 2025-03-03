@@ -4,11 +4,14 @@ import asyncio
 from collections import deque
 from functools import partial
 from mautrix.errors.request import MatrixStandardRequestError
-from mautrix.types import MessageType, TextMessageEventContent
+from mautrix.types import Format, MessageType, TextMessageEventContent
+from mautrix.util import markdown
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 from maubot.handlers import command, web
+from maubot.matrix import MaubotHTMLParser
 from maubot import Plugin, MessageEvent
 from aiohttp.web import Request, Response, json_response
+import json
 
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
@@ -150,9 +153,37 @@ class Vaksi(Plugin):
     async def web_slack_pm(self, req: Request) -> Response:
         try:
             self.auth(req)
+
+            # Preparing message contents
+            try:
+                data = await req.json()
+            except json.JSONDecodeError as e:
+                raise BotException("Invalid JSON given")
+            plain = data.get('plain')
+            md = data.get('md')
+            html = data.get('html')
+
+            if md is not None:
+                if html is not None:
+                    raise BotException("Do not provide both md and html")
+                html = markdown.render(md)
+            elif html is None and plain is None:
+                raise BotException("Invalid combination of inputs")
+
+            if plain is None:
+                plain = (await MaubotHTMLParser().parse(html)).text
+
+            if html is None:
+                content = TextMessageEventContent(MessageType.TEXT)
+                content.body = plain
+            else:
+                content = TextMessageEventContent(MessageType.TEXT, format=Format.HTML)
+                content.formatted_body = html
+                content.body = plain
+
+            # Finding the room and posting the message
             room_id = await self.open_slack_pm(req.match_info["id"])
             data = await req.text()
-            content = TextMessageEventContent(MessageType.TEXT, data)
             event_id = await self.client.send_message(room_id, content)
             return json_response({"room": room_id, "event": event_id})
         except MatrixStandardRequestError as e:
