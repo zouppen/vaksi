@@ -186,7 +186,6 @@ class Vaksi(Plugin):
 
             # Finding the room and posting the message
             room_id = await self.open_slack_pm(req.match_info["id"])
-            data = await req.text()
             event_id = await self.client.send_message(room_id, content)
             return json_response({"room": room_id, "event": event_id})
         except MatrixStandardRequestError as e:
